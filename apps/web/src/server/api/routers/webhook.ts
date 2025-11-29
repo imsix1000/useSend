@@ -2,23 +2,16 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, teamProcedure } from "~/server/api/trpc";
 import { db } from "~/server/db";
-import { Plan, WebhookCallStatus, WebhookStatus } from "@prisma/client";
-import { WEBHOOK_EVENT_TYPES } from "~/server/service/webhook-events";
+import { WebhookCallStatus, WebhookStatus } from "@prisma/client";
+import { WebhookEvents } from "@usesend/lib/src/webhook/webhook-events";
 import {
   WebhookQueueService,
   WebhookService,
 } from "~/server/service/webhook-service";
+import { LimitService } from "~/server/service/limit-service";
+import { UnsendApiError } from "~/server/public-api/api-error";
 
-const EVENT_TYPES_ENUM = z.enum(
-  WEBHOOK_EVENT_TYPES as unknown as [string, ...string[]],
-);
-const PLAN_WEBHOOK_LIMIT_FREE = 1;
-const PLAN_WEBHOOK_LIMIT_PAID = 3;
-
-function getWebhookLimit(team: { isActive: boolean; plan: Plan }) {
-  const isPaid = team.isActive && team.plan !== "FREE";
-  return isPaid ? PLAN_WEBHOOK_LIMIT_PAID : PLAN_WEBHOOK_LIMIT_FREE;
-}
+const EVENT_TYPES_ENUM = z.enum(WebhookEvents);
 
 export const webhookRouter = createTRPCRouter({
   list: teamProcedure.query(async ({ ctx }) => {
@@ -38,18 +31,14 @@ export const webhookRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const limit = getWebhookLimit(ctx.team);
-      const count = await db.webhook.count({
-        where: {
-          teamId: ctx.team.id,
-          status: { not: WebhookStatus.DELETED },
-        },
-      });
+      const { isLimitReached, reason } = await LimitService.checkWebhookLimit(
+        ctx.team.id,
+      );
 
-      if (count >= limit) {
-        throw new TRPCError({
+      if (isLimitReached) {
+        throw new UnsendApiError({
           code: "FORBIDDEN",
-          message: `Webhook limit reached: ${count}/${limit}. Upgrade plan to add more.`,
+          message: reason ?? "Webhook limit reached",
         });
       }
 

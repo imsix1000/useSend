@@ -1,33 +1,45 @@
-export type ContactWebhookEventType =
-  | "contact.created"
-  | "contact.updated"
-  | "contact.deleted";
+export const ContactEvents = [
+  "contact.created",
+  "contact.updated",
+  "contact.deleted",
+] as const;
 
-export type DomainWebhookEventType =
-  | "domain.created"
-  | "domain.verified"
-  | "domain.updated"
-  | "domain.deleted";
+export type ContactWebhookEventType = (typeof ContactEvents)[number];
 
-export type EmailWebhookEventType =
-  | "email.queued"
-  | "email.sent"
-  | "email.delivery_delayed"
-  | "email.delivered"
-  | "email.bounced"
-  | "email.rejected"
-  | "email.rendering_failure"
-  | "email.complained"
-  | "email.failed"
-  | "email.cancelled"
-  | "email.suppressed"
-  | "email.opened"
-  | "email.clicked";
+export const DomainEvents = [
+  "domain.created",
+  "domain.verified",
+  "domain.updated",
+  "domain.deleted",
+] as const;
 
-export type WebhookEventType =
-  | EmailWebhookEventType
-  | DomainWebhookEventType
-  | ContactWebhookEventType;
+export type DomainWebhookEventType = (typeof DomainEvents)[number];
+
+export const EmailEvents = [
+  "email.queued",
+  "email.sent",
+  "email.delivery_delayed",
+  "email.delivered",
+  "email.bounced",
+  "email.rejected",
+  "email.rendering_failure",
+  "email.complained",
+  "email.failed",
+  "email.cancelled",
+  "email.suppressed",
+  "email.opened",
+  "email.clicked",
+] as const;
+
+export type EmailWebhookEventType = (typeof EmailEvents)[number];
+
+export const WebhookEvents = [
+  ...ContactEvents,
+  ...DomainEvents,
+  ...EmailEvents,
+] as const;
+
+export type WebhookEventType = (typeof WebhookEvents)[number];
 
 export type EmailStatus =
   | "QUEUED"

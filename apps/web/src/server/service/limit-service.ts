@@ -5,7 +5,7 @@ import { TeamService } from "./team-service";
 import { withCache } from "../redis";
 import { db } from "../db";
 import { logger } from "../logger/log";
-import { Plan } from "@prisma/client";
+import { Plan, WebhookStatus } from "@prisma/client";
 
 function isLimitExceeded(current: number, limit: number): boolean {
   if (limit === -1) return false; // unlimited
@@ -92,6 +92,36 @@ export class LimitService {
         isLimitReached: true,
         limit,
         reason: LimitReason.TEAM_MEMBER,
+      };
+    }
+
+    return {
+      isLimitReached: false,
+      limit,
+    };
+  }
+
+  static async checkWebhookLimit(teamId: number): Promise<{
+    isLimitReached: boolean;
+    limit: number;
+    reason?: LimitReason;
+  }> {
+    // Limits only apply in cloud mode
+    if (!env.NEXT_PUBLIC_IS_CLOUD) {
+      return { isLimitReached: false, limit: -1 };
+    }
+
+    const team = await TeamService.getTeamCached(teamId);
+    const currentCount = await db.webhook.count({
+      where: { teamId, status: { not: WebhookStatus.DELETED } },
+    });
+
+    const limit = PLAN_LIMITS[getActivePlan(team)].webhooks;
+    if (isLimitExceeded(currentCount, limit)) {
+      return {
+        isLimitReached: true,
+        limit,
+        reason: LimitReason.WEBHOOK,
       };
     }
 
