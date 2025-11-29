@@ -14,6 +14,8 @@ import {
 } from "../queue/queue-constants";
 import { createWorkerHandler, TeamJob } from "../queue/bullmq-context";
 import { logger } from "../logger/log";
+import { LimitService } from "./limit-service";
+import { UnsendApiError } from "../public-api/api-error";
 
 const WEBHOOK_DISPATCH_CONCURRENCY = 25;
 const WEBHOOK_MAX_ATTEMPTS = 6;
@@ -195,6 +197,176 @@ export class WebhookService {
 
   public static generateSecret() {
     return randomBytes(32).toString("hex");
+  }
+
+  public static async listWebhooks(teamId: number) {
+    return db.webhook.findMany({
+      where: { teamId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  public static async createWebhook(params: {
+    teamId: number;
+    userId: number;
+    url: string;
+    description?: string;
+    eventTypes: string[];
+    secret?: string;
+  }) {
+    const { isLimitReached, reason } = await LimitService.checkWebhookLimit(
+      params.teamId,
+    );
+
+    if (isLimitReached) {
+      throw new UnsendApiError({
+        code: "FORBIDDEN",
+        message: reason ?? "Webhook limit reached",
+      });
+    }
+
+    const secret = params.secret ?? WebhookService.generateSecret();
+
+    return db.webhook.create({
+      data: {
+        teamId: params.teamId,
+        url: params.url,
+        description: params.description,
+        secret,
+        eventTypes: params.eventTypes,
+        status: WebhookStatus.ACTIVE,
+        createdByUserId: params.userId,
+      },
+    });
+  }
+
+  public static async updateWebhook(params: {
+    id: string;
+    teamId: number;
+    url?: string;
+    description?: string | null;
+    eventTypes?: string[];
+    rotateSecret?: boolean;
+    secret?: string;
+  }) {
+    const webhook = await db.webhook.findFirst({
+      where: { id: params.id, teamId: params.teamId },
+    });
+
+    if (!webhook) {
+      throw new UnsendApiError({
+        code: "NOT_FOUND",
+        message: "Webhook not found",
+      });
+    }
+
+    const secret =
+      params.rotateSecret === true
+        ? WebhookService.generateSecret()
+        : params.secret;
+
+    return db.webhook.update({
+      where: { id: webhook.id },
+      data: {
+        url: params.url ?? webhook.url,
+        description:
+          params.description === undefined
+            ? webhook.description
+            : (params.description ?? null),
+        eventTypes: params.eventTypes ?? webhook.eventTypes,
+        secret: secret ?? webhook.secret,
+      },
+    });
+  }
+
+  public static async setWebhookStatus(params: {
+    id: string;
+    teamId: number;
+    status: WebhookStatus;
+  }) {
+    const webhook = await db.webhook.findFirst({
+      where: { id: params.id, teamId: params.teamId },
+    });
+
+    if (!webhook) {
+      throw new UnsendApiError({
+        code: "NOT_FOUND",
+        message: "Webhook not found",
+      });
+    }
+
+    return db.webhook.update({
+      where: { id: webhook.id },
+      data: {
+        status: params.status,
+        consecutiveFailures:
+          params.status === WebhookStatus.ACTIVE
+            ? 0
+            : webhook.consecutiveFailures,
+      },
+    });
+  }
+
+  public static async deleteWebhook(params: { id: string; teamId: number }) {
+    const webhook = await db.webhook.findFirst({
+      where: { id: params.id, teamId: params.teamId },
+    });
+
+    if (!webhook) {
+      throw new UnsendApiError({
+        code: "NOT_FOUND",
+        message: "Webhook not found",
+      });
+    }
+
+    return db.webhook.delete({
+      where: { id: webhook.id },
+    });
+  }
+
+  public static async listWebhookCalls(params: {
+    teamId: number;
+    webhookId?: string;
+    status?: WebhookCallStatus;
+    limit: number;
+    cursor?: string;
+  }) {
+    const calls = await db.webhookCall.findMany({
+      where: {
+        teamId: params.teamId,
+        webhookId: params.webhookId,
+        status: params.status,
+      },
+      orderBy: { createdAt: "desc" },
+      take: params.limit + 1,
+      cursor: params.cursor ? { id: params.cursor } : undefined,
+    });
+
+    let nextCursor: string | null = null;
+    if (calls.length > params.limit) {
+      const next = calls.pop();
+      nextCursor = next?.id ?? null;
+    }
+
+    return {
+      items: calls,
+      nextCursor,
+    };
+  }
+
+  public static async getWebhookCall(params: { id: string; teamId: number }) {
+    const call = await db.webhookCall.findFirst({
+      where: { id: params.id, teamId: params.teamId },
+    });
+
+    if (!call) {
+      throw new UnsendApiError({
+        code: "NOT_FOUND",
+        message: "Webhook call not found",
+      });
+    }
+
+    return call;
   }
 }
 

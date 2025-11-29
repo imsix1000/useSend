@@ -451,7 +451,6 @@ enum WebhookStatus {
   ACTIVE
   PAUSED
   AUTO_DISABLED
-  DELETED
 }
 
 enum WebhookCallStatus {

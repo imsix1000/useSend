@@ -1,24 +1,14 @@
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, teamProcedure } from "~/server/api/trpc";
-import { db } from "~/server/db";
 import { WebhookCallStatus, WebhookStatus } from "@prisma/client";
 import { WebhookEvents } from "@usesend/lib/src/webhook/webhook-events";
-import {
-  WebhookQueueService,
-  WebhookService,
-} from "~/server/service/webhook-service";
-import { LimitService } from "~/server/service/limit-service";
-import { UnsendApiError } from "~/server/public-api/api-error";
+import { WebhookService } from "~/server/service/webhook-service";
 
 const EVENT_TYPES_ENUM = z.enum(WebhookEvents);
 
 export const webhookRouter = createTRPCRouter({
   list: teamProcedure.query(async ({ ctx }) => {
-    return db.webhook.findMany({
-      where: { teamId: ctx.team.id, status: { not: WebhookStatus.DELETED } },
-      orderBy: { createdAt: "desc" },
-    });
+    return WebhookService.listWebhooks(ctx.team.id);
   }),
 
   create: teamProcedure
@@ -31,29 +21,13 @@ export const webhookRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { isLimitReached, reason } = await LimitService.checkWebhookLimit(
-        ctx.team.id,
-      );
-
-      if (isLimitReached) {
-        throw new UnsendApiError({
-          code: "FORBIDDEN",
-          message: reason ?? "Webhook limit reached",
-        });
-      }
-
-      const secret = input.secret ?? WebhookService.generateSecret();
-
-      return db.webhook.create({
-        data: {
-          teamId: ctx.team.id,
-          url: input.url,
-          description: input.description,
-          secret,
-          eventTypes: input.eventTypes,
-          status: WebhookStatus.ACTIVE,
-          createdByUserId: ctx.session.user.id,
-        },
+      return WebhookService.createWebhook({
+        teamId: ctx.team.id,
+        userId: ctx.session.user.id,
+        url: input.url,
+        description: input.description,
+        eventTypes: input.eventTypes,
+        secret: input.secret,
       });
     }),
 
@@ -69,33 +43,14 @@ export const webhookRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const webhook = await db.webhook.findFirst({
-        where: { id: input.id, teamId: ctx.team.id },
-      });
-
-      if (!webhook || webhook.status === WebhookStatus.DELETED) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Webhook not found",
-        });
-      }
-
-      const secret =
-        input.rotateSecret === true
-          ? WebhookService.generateSecret()
-          : input.secret;
-
-      return db.webhook.update({
-        where: { id: webhook.id },
-        data: {
-          url: input.url ?? webhook.url,
-          description:
-            input.description === undefined
-              ? webhook.description
-              : (input.description ?? null),
-          eventTypes: input.eventTypes ?? webhook.eventTypes,
-          secret: secret ?? webhook.secret,
-        },
+      return WebhookService.updateWebhook({
+        id: input.id,
+        teamId: ctx.team.id,
+        url: input.url,
+        description: input.description,
+        eventTypes: input.eventTypes,
+        rotateSecret: input.rotateSecret,
+        secret: input.secret,
       });
     }),
 
@@ -103,35 +58,23 @@ export const webhookRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string(),
-        status: z
-          .nativeEnum(WebhookStatus)
-          .refine(
-            (s) => s !== WebhookStatus.DELETED,
-            "Deletion not supported here",
-          ),
+        status: z.nativeEnum(WebhookStatus),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const webhook = await db.webhook.findFirst({
-        where: { id: input.id, teamId: ctx.team.id },
+      return WebhookService.setWebhookStatus({
+        id: input.id,
+        teamId: ctx.team.id,
+        status: input.status,
       });
+    }),
 
-      if (!webhook || webhook.status === WebhookStatus.DELETED) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Webhook not found",
-        });
-      }
-
-      return db.webhook.update({
-        where: { id: webhook.id },
-        data: {
-          status: input.status,
-          consecutiveFailures:
-            input.status === WebhookStatus.ACTIVE
-              ? 0
-              : webhook.consecutiveFailures,
-        },
+  delete: teamProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return WebhookService.deleteWebhook({
+        id: input.id,
+        teamId: ctx.team.id,
       });
     }),
 
@@ -154,44 +97,22 @@ export const webhookRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const calls = await db.webhookCall.findMany({
-        where: {
-          teamId: ctx.team.id,
-          webhookId: input.webhookId,
-          status: input.status,
-        },
-        orderBy: { createdAt: "desc" },
-        take: input.limit + 1,
-        cursor: input.cursor ? { id: input.cursor } : undefined,
+      return WebhookService.listWebhookCalls({
+        teamId: ctx.team.id,
+        webhookId: input.webhookId,
+        status: input.status,
+        limit: input.limit,
+        cursor: input.cursor,
       });
-
-      let nextCursor: string | null = null;
-      if (calls.length > input.limit) {
-        const next = calls.pop();
-        nextCursor = next?.id ?? null;
-      }
-
-      return {
-        items: calls,
-        nextCursor,
-      };
     }),
 
   getCall: teamProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const call = await db.webhookCall.findFirst({
-        where: { id: input.id, teamId: ctx.team.id },
+      return WebhookService.getWebhookCall({
+        id: input.id,
+        teamId: ctx.team.id,
       });
-
-      if (!call) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Webhook call not found",
-        });
-      }
-
-      return call;
     }),
 
   retryCall: teamProcedure

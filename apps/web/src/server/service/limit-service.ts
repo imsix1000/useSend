@@ -5,7 +5,7 @@ import { TeamService } from "./team-service";
 import { withCache } from "../redis";
 import { db } from "../db";
 import { logger } from "../logger/log";
-import { Plan, WebhookStatus } from "@prisma/client";
+import { Plan } from "@prisma/client";
 
 function isLimitExceeded(current: number, limit: number): boolean {
   if (limit === -1) return false; // unlimited
@@ -113,7 +113,7 @@ export class LimitService {
 
     const team = await TeamService.getTeamCached(teamId);
     const currentCount = await db.webhook.count({
-      where: { teamId, status: { not: WebhookStatus.DELETED } },
+      where: { teamId },
     });
 
     const limit = PLAN_LIMITS[getActivePlan(team)].webhooks;
