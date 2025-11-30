@@ -102,9 +102,18 @@ export class WebhookService {
       where: {
         teamId,
         status: WebhookStatus.ACTIVE,
-        eventTypes: {
-          has: payload.type,
-        },
+        OR: [
+          {
+            eventTypes: {
+              has: payload.type,
+            },
+          },
+          {
+            eventTypes: {
+              isEmpty: true,
+            },
+          },
+        ],
       },
     });
 

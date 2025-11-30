@@ -16,7 +16,7 @@ export const webhookRouter = createTRPCRouter({
       z.object({
         url: z.string().url(),
         description: z.string().optional(),
-        eventTypes: z.array(EVENT_TYPES_ENUM).min(1),
+        eventTypes: z.array(EVENT_TYPES_ENUM),
         secret: z.string().min(16).optional(),
       }),
     )
@@ -37,7 +37,7 @@ export const webhookRouter = createTRPCRouter({
         id: z.string(),
         url: z.string().url().optional(),
         description: z.string().nullable().optional(),
-        eventTypes: z.array(EVENT_TYPES_ENUM).min(1).optional(),
+        eventTypes: z.array(EVENT_TYPES_ENUM).optional(),
         rotateSecret: z.boolean().optional(),
         secret: z.string().min(16).optional(),
       }),
