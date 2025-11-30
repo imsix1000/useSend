@@ -2,6 +2,8 @@ import { WebhookCallStatus, WebhookStatus } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
 import { createHmac, randomUUID, randomBytes } from "crypto";
 import {
+  WebhookEventData,
+  WebhookPayloadData,
   type WebhookEvent,
   type WebhookEventPayloadMap,
   type WebhookEventType,
@@ -34,13 +36,8 @@ type WebhookCallJobData = {
 
 type WebhookCallJob = TeamJob<WebhookCallJobData>;
 
-type WebhookEventInput<TType extends WebhookEventType> = {
-  teamId: number;
-  type: TType;
-  data: WebhookEventPayloadMap[TType];
-  id?: string;
-  createdAt?: string | Date;
-};
+type WebhookEventInput<TType extends WebhookEventType> =
+  WebhookPayloadData<TType>;
 
 export class WebhookQueueService {
   private static queue = new Queue<WebhookCallJobData>(WEBHOOK_DISPATCH_QUEUE, {
@@ -86,18 +83,10 @@ export class WebhookQueueService {
 
 export class WebhookService {
   public static async emit<TType extends WebhookEventType>(
-    payloadWithTeam: WebhookEventInput<TType>,
+    teamId: number,
+    type: TType,
+    payload: WebhookEventInput<TType>,
   ) {
-    const { teamId, id, createdAt, ...eventData } = payloadWithTeam;
-    const payload: WebhookEvent<TType> = {
-      id: id ?? randomUUID(),
-      createdAt:
-        typeof createdAt === "string"
-          ? createdAt
-          : (createdAt ?? new Date()).toISOString(),
-      ...eventData,
-    };
-
     const activeWebhooks = await db.webhook.findMany({
       where: {
         teamId,
@@ -105,7 +94,7 @@ export class WebhookService {
         OR: [
           {
             eventTypes: {
-              has: payload.type,
+              has: type,
             },
           },
           {
@@ -119,7 +108,7 @@ export class WebhookService {
 
     if (activeWebhooks.length === 0) {
       logger.debug(
-        { teamId, type: payload.type },
+        { teamId, type },
         "[WebhookService]: No active webhooks for event type",
       );
       return;
@@ -132,7 +121,7 @@ export class WebhookService {
         data: {
           webhookId: webhook.id,
           teamId: webhook.teamId,
-          type: payload.type,
+          type: type,
           payload: payloadString,
           status: WebhookCallStatus.PENDING,
           attempt: 0,

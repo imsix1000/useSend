@@ -283,18 +283,17 @@ export async function parseSesHook(data: SesEvent) {
 
     const metadata = buildEmailMetadata(mailStatus, mailData);
 
-    await WebhookService.emit({
-      teamId: email.teamId,
-      type: emailStatusToEvent(mailStatus),
-      data: buildEmailWebhookPayload({
+    await WebhookService.emit(
+      email.teamId,
+      emailStatusToEvent(mailStatus),
+      buildEmailWebhookPayload({
         email,
         status: mailStatus,
         occurredAt,
         eventData: mailData,
         metadata,
       }),
-      createdAt: occurredAt,
-    });
+    );
   } catch (error) {
     logger.error(
       { error, emailId: email.id, mailStatus },

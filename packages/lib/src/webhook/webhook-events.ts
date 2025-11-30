@@ -181,11 +181,14 @@ export type WebhookEventPayloadMap = EmailEventPayloadMap &
   DomainEventPayloadMap &
   ContactEventPayloadMap;
 
+export type WebhookPayloadData<TType extends WebhookEventType> =
+  WebhookEventPayloadMap[TType];
+
 export type WebhookEvent<TType extends WebhookEventType> = {
   id: string;
   type: TType;
   createdAt: string;
-  data: WebhookEventPayloadMap[TType];
+  data: WebhookPayloadData<TType>;
 };
 
 export type WebhookEventData = {

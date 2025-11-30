@@ -163,12 +163,11 @@ async function emitContactEvent(
       return;
     }
 
-    await WebhookService.emit({
-      teamId: resolvedTeamId,
+    await WebhookService.emit(
+      resolvedTeamId,
       type,
-      data: buildContactPayload(contact),
-      createdAt: contact.updatedAt.toISOString(),
-    });
+      buildContactPayload(contact),
+    );
   } catch (error) {
     logger.error(
       { error, contactId: contact.id, type },
