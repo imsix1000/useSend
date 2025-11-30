@@ -77,7 +77,7 @@ function buildDnsRecords(domain: Domain): DomainDnsRecord[] {
 }
 
 function withDnsRecords<T extends Domain>(
-  domain: T
+  domain: T,
 ): T & { dnsRecords: DomainDnsRecord[] } {
   return {
     ...domain,
@@ -153,7 +153,7 @@ export async function validateDomainFromEmail(email: string, teamId: number) {
 export async function validateApiKeyDomainAccess(
   email: string,
   teamId: number,
-  apiKey: ApiKey & { domain?: { name: string } | null }
+  apiKey: ApiKey & { domain?: { name: string } | null },
 ) {
   // First validate the domain exists and is verified
   const domain = await validateDomainFromEmail(email, teamId);
@@ -178,7 +178,7 @@ export async function createDomain(
   teamId: number,
   name: string,
   region: string,
-  sesTenantId?: string
+  sesTenantId?: string,
 ) {
   const domainStr = tldts.getDomain(name);
 
@@ -210,7 +210,7 @@ export async function createDomain(
     name,
     region,
     sesTenantId,
-    dkimSelector
+    dkimSelector,
   );
 
   const domain = await db.domain.create({
@@ -251,7 +251,7 @@ export async function getDomain(id: number, teamId: number) {
     const previousStatus = domain.status;
     const domainIdentity = await ses.getDomainIdentity(
       domain.name,
-      domain.region
+      domain.region,
     );
 
     const dkimStatus = domainIdentity.DkimAttributes?.Status;
@@ -319,7 +319,7 @@ export async function getDomain(id: number, teamId: number) {
 
 export async function updateDomain(
   id: number,
-  data: { clickTracking?: boolean; openTracking?: boolean }
+  data: { clickTracking?: boolean; openTracking?: boolean },
 ) {
   const updated = await db.domain.update({
     where: { id },
@@ -343,7 +343,7 @@ export async function deleteDomain(id: number) {
   const deleted = await ses.deleteDomain(
     domain.name,
     domain.region,
-    domain.sesTenantId ?? undefined
+    domain.sesTenantId ?? undefined,
   );
 
   if (!deleted) {
@@ -359,7 +359,7 @@ export async function deleteDomain(id: number) {
 
 export async function getDomains(
   teamId: number,
-  options?: { domainId?: number }
+  options?: { domainId?: number },
 ) {
   const domains = await db.domain.findMany({
     where: {
